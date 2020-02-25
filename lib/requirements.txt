@@ -1,0 +1,11 @@
+pandas,
+mysql-connector-python,
+regex,
+beautifulSoup4,
+selenium,
+times,
+datetime,
+beautifulsoup4,
+pyodbc,
+requests,
+collections
