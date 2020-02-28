@@ -45,14 +45,10 @@ def sql_connect(dbName,dbUserName,dbPassword,hostName):
     cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER='+hostName+';DATABASE='+dbName+';UID='+dbUserName+';PWD='+dbPassword)
     cursor = cnxn.cursor()
     return cnxn,cursor
-def opening_any_link(link,driver):
-    driver.get(link)
-    driver.execute_script("window.scrollTo(0,300)")
-    time.sleep(10)
-    return driver
-def passing_html_to_beautifulSoup(driver):
-    html = driver.page_source
-    soup = BeautifulSoup(html,'html.parser')
+def passing_xml_to_beautifulSoup(url,headers):
+    res = requests.get(url, headers=headers)
+    xml_data = res.text
+    soup = BeautifulSoup(xml_data,'xml')
     return soup
 def get_filename_from_cd(cd):
     """
@@ -65,6 +61,33 @@ def get_filename_from_cd(cd):
         return None
     return fname[0]
 # WebScraping Code
+def parse_xbrl_links(xbrl_links):
+    xml_data_list=[]
+    for link in xbrl_links[1:]:
+        pagedata=defaultdict(list)
+        url = link
+        pagedata['xbrl']=url
+        headers ={'user-agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
+        try:
+            soup = passing_xml_to_beautifulSoup(url,headers)
+            value_list = soup.find_all()
+            xml_data_list.append(pagedata)
+        except:
+            continue
+        for tag in value_list:
+            if '<in-capmkt:' in str(tag):
+                tag_name=tag.name
+                key=tag_name
+                key = re.sub('([A-Z]{1})', r' \1',key).strip()
+                value = tag.get_text()
+                
+                changed_key={"B S E Scrip Code":"scripcode","N S E Symbol":"nsesymbol","M S E I Symbol":"mseisymbol", "Name Of The Company":"companyname","I S I N":"isin","Regulation Of Insider Trading":"regulationofinsider","Category Of Person":"personcategory","Name Of The Person":"personname","Type Of Instrument":"instrumenttype","Securities Held Prior To Acquisition Or Disposal Number Of Security":"securitynumberheldprior","Securities Held Prior To Acquisition Or Disposal Percentage Of Shareholding":"securitiespercentageheldprior","Securities Acquired Or Disposed Number Of Security":"noofsecurities","Securities Acquired Or Disposed Value Of Security":"securityvalue","Securities Acquired Or Disposed Transaction Type":"securitytype","Securities Held Post Acquistion Or Disposal Number Of Security":"postsecurities","Securities Held Post Acquistion Or Disposal Percentage Of Shareholding":"postsecuritypercentage","Date Of Allotment Advice Or Acquisition Of Shares Or Sale Of Shares Specify From Date":"allotmentadvicedate","Date Of Allotment Advice Or Acquisition Of Shares Or Sale Of Shares Specify To Date":"saleofsharesspecifytodate","Date Of Intimation To Company":"dateofintimation","Mode Of Acquisition Or Disposal":"modeofacquisionordisposal","Exchange On Which The Trade Was Executed":"exchangeonwhichthetradewasexecuted","Value In Aggregate":"valueinaggregate"}
+                try:
+                    pagedata[str(changed_key[key])] = value
+                except:
+                    pass    
+    df=pd.DataFrame(xml_data_list)
+    return df
 def Historical_Scraped_data(st_yr,end_yr,cursor,cnxn):
     for yr in range(st_yr,end_yr):
         st_mnth=1
@@ -187,35 +210,7 @@ def Historical_Scraped_data(st_yr,end_yr,cursor,cnxn):
                 try:        
                     link_field=table1.columns[-1]
                     xml_data_list=[]
-                    for links in xbrl_links[1:]:
-                        pagedata=defaultdict(list)
-                        url = links
-                        pagedata[link_field]=url
-                        headers ={'user-agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
-                        try:
-                            res = requests.get(url, headers=headers)
-                            xml_data = res.text
-                            soup = BeautifulSoup(xml_data,'xml')
-                            value_list = soup.find_all()
-                            xml_data_list.append(pagedata)
-                        except:
-                            continue
-                        for tag in value_list:
-                            if '<in-capmkt:' in str(tag):
-                                tag_name=tag.name
-                                key=tag_name
-                                key = re.sub('([A-Z]{1})', r' \1',key).strip()
-                                value = tag.get_text()
-
-                                changed_key={"B S E Scrip Code":"scripcode","N S E Symbol":"nsesymbol","M S E I Symbol":"mseisymbol", "Name Of The Company":"companyname","I S I N":"isin","Regulation Of Insider Trading":"regulationofinsidertrading","Category Of Person":"personcategory","Name Of The Person":"personname","Type Of Instrument":"instrumenttype","Securities Held Prior To Acquisition Or Disposal Number Of Security":"securitynumberheldprior","Securities Held Prior To Acquisition Or Disposal Percentage Of Shareholding":"securitiespercentageheldprior","Securities Acquired Or Disposed Number Of Security":"noofsecurities","Securities Acquired Or Disposed Value Of Security":"securityvalue","Securities Acquired Or Disposed Transaction Type":"securitytype","Securities Held Post Acquistion Or Disposal Number Of Security":"postsecurities","Securities Held Post Acquistion Or Disposal Percentage Of Shareholding":"postsecuritypercentage","Date Of Allotment Advice Or Acquisition Of Shares Or Sale Of Shares Specify From Date":"allotmentadvicedate","Date Of Allotment Advice Or Acquisition Of Shares Or Sale Of Shares Specify To Date":"saleofsharesspecifytodate","Date Of Intimation To Company":"dateofintimation","Mode Of Acquisition Or Disposal":"modeofacquisionordisposal","Exchange On Which The Trade Was Executed":"exchangeonwhichthetradewasexecuted","Value In Aggregate":"valueinaggregate"}
-                                try:
-                                    pagedata[str(changed_key[key])] = value
-                                except:
-                                    pass
-                except:
-                    pass
-                try:
-                    df=pd.DataFrame(xml_data_list)
+                    df=parse_xbrl_links(xbrl_links)
                     df = df.drop([0], axis=0)
                     df.to_csv("../docs/xml_file-"+str(yr)+"-q"+str(c)+".csv",index=0)
                     print("created xml file of"+str(yr)+"-q"+str(c))
@@ -224,7 +219,7 @@ def Historical_Scraped_data(st_yr,end_yr,cursor,cnxn):
                 except:
                     pass
                 try:
-                    cmbd=pd.merge(table1,table2,on=link_field).drop(['nsesymbol','regulationofinsidertrading'],axis=1)
+                    cmbd=pd.merge(table1,table2,on=link_field).drop(['nsesymbol','regulationofinsider'],axis=1)
                     cmbd.drop_duplicates(keep=False,inplace=True)
                     cmbd.to_csv('../docs/'+str(yr)+'-q'+str(c)+'.csv', index=0)
                     print("created combined file of"+str(yr)+"-q"+str(c))
@@ -263,86 +258,38 @@ def Historical_Scraped_data(st_yr,end_yr,cursor,cnxn):
             c+=1
             st_mnth+=3
             end_mnth+=3
-def Current_Scraped_data(driver1,cursor,cnxn):
-    soup=passing_html_to_beautifulSoup(driver1)
-    my_table = soup.find("table",{"class":"common_table customHeight-table tableScroll alt_row w-100"})
-    print("Table tag has been extracted")
-    table_1=my_table.find_all('tr')
-    links=[]
-    for row in range(0,len(table_1)):
-        columns=table_1[row].find_all("td")
-        for i in range(8,len(columns)):
-            try:
-                href=columns[i].find("a").get("href")
-            except:href=columns[i].get_text()
-            links.append(href)
-    list1=[]
-    for tr in table_1:
-        td=tr.find_all('td')
-        row=[t.text for t in td]
-        list1.append(row)
-    print("XML links has been extracted and kept in list links")
-    df = pd.DataFrame(list1,columns=["symbol","company","regulation","nameofacquision","typeofsecurity","noofsecurity","acquision","broadcastdatetime","xbrl"])
+def Current_Scraped_data(cursor,cnxn):
+    r = requests.get("https://www.nseindia.com/api/corporates-pit?index=equities&csv=true", headers ={'user-agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}, allow_redirects=True)
+    filename = get_filename_from_cd(r.headers.get('content-disposition'))
+    print(filename)
+    os.path.join('../docs', filename)
+    open('../docs/'+filename, 'wb').write(r.content)
+    with open("../docs/"+filename) as csvfile:
+        csvreader = csv.reader(csvfile)
+        xbrl_links=[]
+        for row in csvreader:
+            xbrl_links.append(row[-1])
+    df=parse_xbrl_links(xbrl_links)
     df = df.drop([0], axis=0)
-    df['xbrl']=pd.DataFrame(links)
-    if os.path.isfile('../outputs/today.table'):
-        print('file exists')
-    else:
-        df.to_csv('../outputs/today.csv', index=0)
-        print("CSV table,d_table.csv has been created")
-        xml_data_list=[]
-        for link in links:
-            pagedata=defaultdict(list)
-            url = link
-            pagedata['xbrl']=url
-            headers ={'user-agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
-            try:
-                res = requests.get(url, headers=headers)
-                xml_data = res.text
-                soup = BeautifulSoup(xml_data,'xml')
-                value_list = soup.find_all()
-                xml_data_list.append(pagedata)
-            except:
-                continue
-            for tag in value_list:
-                if '<in-capmkt:' in str(tag):
-                    tag_name=tag.name
-                    key=tag_name
-                    key = re.sub('([A-Z]{1})', r' \1',key).strip()
-                    value = tag.get_text()
-           
-                    changed_key={"B S E Scrip Code":"scripcode","N S E Symbol":"nsesymbol","M S E I Symbol":"mseisymbol", "Name Of The Company":"companyname","I S I N":"isin","Regulation Of Insider Trading":"regulationofinsider","Category Of Person":"personcategory","Name Of The Person":"personname","Type Of Instrument":"instrumenttype","Securities Held Prior To Acquisition Or Disposal Number Of Security":"securitynumberheldprior","Securities Held Prior To Acquisition Or Disposal Percentage Of Shareholding":"securitiespercentageheldprior","Securities Acquired Or Disposed Number Of Security":"noofsecurities","Securities Acquired Or Disposed Value Of Security":"securityvalue","Securities Acquired Or Disposed Transaction Type":"securitytype","Securities Held Post Acquistion Or Disposal Number Of Security":"postsecurities","Securities Held Post Acquistion Or Disposal Percentage Of Shareholding":"postsecuritypercentage","Date Of Allotment Advice Or Acquisition Of Shares Or Sale Of Shares Specify From Date":"allotmentadvicedate","Date Of Allotment Advice Or Acquisition Of Shares Or Sale Of Shares Specify To Date":"saleofsharesspecifytodate","Date Of Intimation To Company":"dateofintimation","Mode Of Acquisition Or Disposal":"modeofacquisionordisposal","Exchange On Which The Trade Was Executed":"exchangeonwhichthetradewasexecuted","Value In Aggregate":"valueinaggregate"}
-                    try:
-                        pagedata[str(changed_key[key])] = value
-                    except:
-                        pass
-        df=pd.DataFrame(xml_data_list)
-        df = df.drop([0], axis=0)
-        df.to_csv("../outputs/xml_file.csv",index=0)
-        data1 = pd.read_csv("../outputs/today.csv")
-        data2 = pd.read_csv("../outputs/xml_file.csv")
-        cmbd=pd.merge(data1, data2,on="xbrl")
-        cmbd.to_csv('../outputs/combined.csv', index=0)
-        #server = 'sainikeshk.database.windows.net'
-        #database = 'Insidertrading'
-        #username = 'sainikeshk'
-        #password = 'maveric1@123'
-        #cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER='+server+';DATABASE='+database+';UID='+username+';PWD='+ password)
-        #cursor = cnxn.cursor()
-        #creating table
-        query="CREATE TABLE today_table(symbol varchar(255),company varchar(255),regulation varchar(255),nameofacquision varchar(255),typeofsecurity varchar(255),noofsecurity varchar(255),acquision varchar(255),broadcastdatetime varchar(255),xbrl varchar(255),scripcode varchar(255),nsesymbol varchar(255),mseisymbol varchar(255),companyname varchar(255),isin varchar(255),regulationofinsider varchar(255),personcategory varchar(255),personname varchar(255),instrumenttype varchar(255),securitynumberheldprior varchar(255),securitiespercentageheldprior varchar(255),noofsecurities varchar(255),securityvalue varchar(255),securitytype varchar(255),postsecurities varchar(255),postsecuritypercentage varchar(255),allotmentadvicedate varchar(255),saleofsharesspecifytodate varchar(255),dateofintimation varchar(255),modeofacquisionordisposal varchar(255),exchangeonwhichthetradewasexecuted varchar(255),valueinaggregate varchar(255))"
-        cursor.execute(query)
-        cnxn.commit()
-        with open ('../outputs/combined.csv', 'r') as f:
-            reader = csv.reader(f)
-            columns = next(reader)
-            query = 'insert into today_table({0}) values ({1})'
-            query = query.format(','.join(columns), ','.join('?' * len(columns)))
+    df.to_csv("../docs/xmlfile.csv",index=0)
+    data1 = pd.read_csv("../docs/"+filename)
+    data1.columns= ['symbol', 'company', 'regulation', 'nameoftheacquirerdisposer', 'categoryofperson', 'typeofsecurityprior', 'noofsecurityprior', 'shareholdingprior', 'typeofsecurityacquireddisplosed', 'noofsecuritiesacquireddisplosed', 'valueofsecurityacquireddisplosed', 'acquisitiondisposaltransactiontype', 'typeofsecuritypost', 'noofsecuritypost', 'post', 'dateofallotmentacquisitionfrom', 'dateofallotmentacquisitionto', 'dateofinitmationtocompany', 'modeofacquisition', 'derivativetypesecurity', 'derivativecontractspecification', 'notionalvaluebuy', 'numberofunitscontractlotsizebuy', 'notionalvaluesell', 'numberofunitscontractlotsizesell', 'exchange', 'remark', 'broadcastedateandtime', 'xbrl']
+    data2 = pd.read_csv("../docs/xmlfile.csv")
+    cmbd=pd.merge(data1, data2,on="xbrl")
+    cmbd.to_csv('../docs/combin.csv', index=0)
+    query="CREATE TABLE today_table(symbol varchar(255),company varchar(255),regulation varchar(255),nameofacquision varchar(255),typeofsecurity varchar(255),noofsecurity varchar(255),acquision varchar(255),broadcastdatetime varchar(255),xbrl varchar(255),scripcode varchar(255),nsesymbol varchar(255),mseisymbol varchar(255),companyname varchar(255),isin varchar(255),regulationofinsider varchar(255),personcategory varchar(255),personname varchar(255),instrumenttype varchar(255),securitynumberheldprior varchar(255),securitiespercentageheldprior varchar(255),noofsecurities varchar(255),securityvalue varchar(255),securitytype varchar(255),postsecurities varchar(255),postsecuritypercentage varchar(255),allotmentadvicedate varchar(255),saleofsharesspecifytodate varchar(255),dateofintimation varchar(255),modeofacquisionordisposal varchar(255),exchangeonwhichthetradewasexecuted varchar(255),valueinaggregate varchar(255))"
+    cursor.execute(query)
+    cnxn.commit()
+    with open ('../docs/combin.csv', 'r') as f:
+        reader = csv.reader(f)
+        columns = next(reader)
+        query = 'insert into today_table({0}) values ({1})'
+        query = query.format(','.join(columns), ','.join('?' * len(columns)))
             #cnxn = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};SERVER='+server+';DATABASE='+database+';UID='+username+';PWD='+ password)
             #cursor = cnxn.cursor()
-            for data in reader:
-                cursor.execute(query, data)
-            cnxn.commit()
+        for data in reader:
+            cursor.execute(query, data)
+        cnxn.commit()
     
 def main():
     logger = create_logger()
@@ -351,47 +298,12 @@ def main():
     output_DB_prop = config.get("outputDBprop", None)
     Input_path= config.get("Input_path", None)
     whoami=platform.system()
-    chrome_path=config.get("chrome_driver_path",None)
-    print(whoami)
-    if whoami == 'Darwin':
-        Firefox  = config.get("Firefox_mac", None)
-        geckodriverpath=config.get("geckodriver_mac_path", None)
-    elif whoami == 'Windows':
-        Firefox  = config.get("Firefox_win", None)
-        geckodriverpath=config.get("geckodriver_win_path", None)
-    elif whoami == 'Linux':
-        Firefox  = config.get("Firefox_Linux", None)
-        geckodriverpath=config.get("geckodriver_Linux_path", None)
-    else:
-        print("Please check the config file, to check if the os is supporting the package...")
-    # Opening new chrome
-    try:
-        try:
-            geckodriverpath = geckodriverpath
-            binary =Firefox
-            print(geckodriverpath)
-            print(binary)
-            options = Options()
-            options.headless = True
-            options.binary = binary
-            cap = DesiredCapabilities().FIREFOX
-            cap["marionette"] = True #optional
-            driver = webdriver.Firefox(options=options, capabilities=cap, executable_path=geckodriverpath)
-            driver.maximize_window()
-        except:
-            options=chrome_options()
-            options.add_argument("--headless")
-            options.add_argument("--window-size=1920x1080")
-            driver = webdriver.Chrome(options=options, executable_path=chrome_path)
-    except:
-        print("Need to have either firefox or chrome webdriver")
-    st_yr=2018
+    st_yr=2014
     end_yr=int(date.today().year)+1
     cnxn,cursor = sql_connect(output_DB_prop.get('dbName'),output_DB_prop.get('dbUserName'),output_DB_prop.get('dbPassword'),output_DB_prop.get('hostName'))
     Historical_Scraped_data(st_yr,end_yr,cursor,cnxn)
-    driver1 = opening_any_link("https://www.nseindia.com/companies-listing/corporate-filings-insider-trading",driver)
     time.sleep(2)
-    Current_Scraped_data(driver1,cursor,cnxn)
+    Current_Scraped_data(cursor,cnxn)
 if __name__ == "__main__":
         main()
 
