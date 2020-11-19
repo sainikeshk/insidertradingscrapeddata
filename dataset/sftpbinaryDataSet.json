@@ -1,0 +1,17 @@
+{
+	"name": "sftpbinaryDataSet",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "SftpConnLinkedService",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "Binary",
+		"typeProperties": {
+			"location": {
+				"type": "SftpLocation",
+				"folderPath": "/@concat('CM30/DATA/',formatDateTime(utcnow(),'%B%d%Y'),'/')"
+			}
+		}
+	}
+}
