@@ -2,7 +2,7 @@
 	"name": "sftpDownloadDataset",
 	"properties": {
 		"linkedServiceName": {
-			"referenceName": "sftpdownloadBlobStorage",
+			"referenceName": "storeFilestoBlob",
 			"type": "LinkedServiceReference"
 		},
 		"annotations": [],
